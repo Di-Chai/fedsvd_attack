@@ -20,30 +20,35 @@ def two_size_attack(pxq):
     return one_side_attack(xq.T).T
 
 
-def correlation(real_x, rec_x):
+def correlation(real_x, rec_x, correlation_func=pearsonr, comp_func=np.max):
     m, n = real_x.shape
     results = []
-    if m < n:
+    if m <= n:
         for i in range(real_x.shape[0]):
             with Pool(cpu_count()) as p:
-                tmp_result = p.map(partial(pearsonr, real_x[i]), rec_x)
-            results.append(max([e[0] for e in tmp_result]))
-        print(f'Dim 0 Mean {np.mean(results)} Max {np.max(results)}')
+                tmp_result = p.map(partial(correlation_func, real_x[i]), rec_x)
+            results.append(comp_func([e[0] for e in tmp_result]))
+        print(
+            f'{getattr(correlation_func, "__name__")} '
+            f'Mean {np.mean(results)} {getattr(comp_func, "__name__")} {comp_func(results)}'
+        )
     else:
-        for i in range(real_x.shape[1]):
-            with Pool(cpu_count()) as p:
-                tmp_result = p.map(partial(pearsonr, real_x[:, i]), rec_x.T)
-            results.append(max([e[0] for e in tmp_result]))
-        print(f'Dim 1 Mean {np.mean(results)} Max {np.max(results)}')
+        return correlation(real_x.T, rec_x.T)
     return results
+
+
+def root_mse(a, b):
+    return [np.sqrt(np.mean(np.square(a - b)))]
 
 
 if __name__ == '__main__':
 
     args_parser = argparse.ArgumentParser()
-    args_parser.add_argument('--data', '-d', help='dataset', choices=('wine', 'mnist', 'ml100k'), default='wine')
-    args_parser.add_argument('--seed', '-s', help='random seed', type=int)
+    args_parser.add_argument('--data', '-d', help='dataset', choices=('wine', 'mnist', 'ml100k'), default='ml100k')
+    args_parser.add_argument('--seed', '-s', help='random seed', type=int, default=0)
     args = args_parser.parse_args()
+
+    print(args)
 
     x = np.load(os.path.join('data', args.data + '.npy'))
 
@@ -66,7 +71,9 @@ if __name__ == '__main__':
     print('Attack PX')
 
     dec_x = one_side_attack(pxq)
-    correlation(real_x=x, rec_x=dec_x)
+    np.save(os.path.join('data', args.data + f'_px_{args.seed}' + '.npy'), dec_x)
+    correlation(real_x=x, rec_x=dec_x, correlation_func=pearsonr, comp_func=np.max)
+    correlation(real_x=x, rec_x=dec_x, correlation_func=root_mse, comp_func=np.min)
 
     xq = np.zeros(x.shape)
     index = 0
@@ -78,7 +85,9 @@ if __name__ == '__main__':
     print('Attack XQ')
 
     dec_x = one_side_attack(xq.T).T
-    correlation(real_x=x, rec_x=dec_x)
+    np.save(os.path.join('data', args.data + f'_xq_{args.seed}' + '.npy'), dec_x)
+    correlation(real_x=x, rec_x=dec_x, correlation_func=pearsonr, comp_func=np.max)
+    correlation(real_x=x, rec_x=dec_x, correlation_func=root_mse, comp_func=np.min)
 
     index = 0
     for i in range(len(q)):
@@ -89,9 +98,13 @@ if __name__ == '__main__':
     print('Attack PXQ')
 
     dec_x = two_size_attack(pxq)
-    correlation(real_x=x, rec_x=dec_x)
+    np.save(os.path.join('data', args.data + f'_pxq_{args.seed}' + '.npy'), dec_x)
+    correlation(real_x=x, rec_x=dec_x, correlation_func=pearsonr, comp_func=np.max)
+    correlation(real_x=x, rec_x=dec_x, correlation_func=root_mse, comp_func=np.min)
 
     print('#' * 30)
     print('Correlation to random data')
-
-    correlation(real_x=x, rec_x=np.random.random(x.shape))
+    dec_x = np.random.random(x.shape)
+    np.save(os.path.join('data', args.data + f'_random_{args.seed}' + '.npy'), dec_x)
+    correlation(real_x=x, rec_x=dec_x, correlation_func=pearsonr, comp_func=np.max)
+    correlation(real_x=x, rec_x=dec_x, correlation_func=root_mse, comp_func=np.min)
